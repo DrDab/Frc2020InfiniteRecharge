@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Titan Robotics Club (http://www.titanrobotics.com)
+ * Copyright (c) 2020 Titan Robotics Club (http://www.titanrobotics.com)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@ package frclib;
 import edu.wpi.first.networktables.ConnectionNotification;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.NetworkTableValue;
 import edu.wpi.first.wpilibj.Relay;
 import trclib.TrcDbgTrace;
 import trclib.TrcRobot;
@@ -57,8 +58,6 @@ public abstract class FrcRemoteVisionProcessor
         networkTable = instance.getTable(networkTableName);
         instance.addConnectionListener(this::connectionListener, false);
         visionTaskObj = TrcTaskMgr.getInstance().createTask(instanceName + ".visionTask", this::updateTargetInfo);
-        // TODO: Maybe make this standalone? We'll see.
-        visionTaskObj.registerTask(TrcTaskMgr.TaskType.PRECONTINUOUS_TASK);
     }
 
     public FrcRemoteVisionProcessor(String instanceName, String networkTableName, int relayPort)
@@ -71,6 +70,24 @@ public abstract class FrcRemoteVisionProcessor
     public String toString()
     {
         return instanceName;
+    }
+
+    /**
+     * Enables or disables the remote vision processor. The ring light is also enabled or disabled accordingly.
+     *
+     * @param enabled If true, enable the ring light and processor. Disable both otherwise.
+     */
+    public void setEnabled(boolean enabled)
+    {
+        setRingLightEnabled(enabled);
+        if (enabled)
+        {
+            visionTaskObj.registerTask(TrcTaskMgr.TaskType.PRECONTINUOUS_TASK);
+        }
+        else
+        {
+            visionTaskObj.unregisterTask();
+        }
     }
 
     /**
@@ -99,19 +116,11 @@ public abstract class FrcRemoteVisionProcessor
         }
     }
 
-    private void recalculatePolarCoords(RelativePose pose)
-    {
-        pose.r = TrcUtil.magnitude(pose.x, pose.y);
-        pose.theta = Math.toDegrees(Math.atan2(pose.x, pose.y));
-    }
-
     private void connectionListener(ConnectionNotification notification)
     {
-        if (!notification.connected)
-        {
-            TrcDbgTrace.getGlobalTracer()
-                .traceInfo("connectionListener", "Client %s disconnected!", notification.conn.remote_ip);
-        }
+        TrcDbgTrace.getGlobalTracer()
+            .traceErr("connectionListener", "Client %s connected=%b!", notification.conn.remote_ip,
+                notification.connected);
     }
 
     /**
@@ -143,7 +152,7 @@ public abstract class FrcRemoteVisionProcessor
             // Adjust for the camera offset and recalculate polar coordinates
             relativePose.x += offsetX;
             relativePose.y += offsetY;
-            recalculatePolarCoords(relativePose);
+            relativePose.recalculatePolarCoords();
             this.relativePose = relativePose;
             synchronized (framesLock)
             {
@@ -161,6 +170,16 @@ public abstract class FrcRemoteVisionProcessor
     private boolean isFresh(RelativePose pose)
     {
         return pose != null && (timeout == 0.0 || TrcUtil.getCurrentTime() - pose.time <= timeout);
+    }
+
+    public double get(String key)
+    {
+        return networkTable.getEntry(key).getDouble(0.0);
+    }
+
+    public NetworkTableValue getValue(String key)
+    {
+        return networkTable.getEntry(key).getValue();
     }
 
     /**
@@ -294,5 +313,17 @@ public abstract class FrcRemoteVisionProcessor
     {
         public double r, theta, objectYaw, x, y;
         public double time;
+
+        public void recalculatePolarCoords()
+        {
+            r = TrcUtil.magnitude(x, y);
+            theta = Math.toDegrees(Math.atan2(x, y));
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("RelativePose(x=%.1f,y=%.1f,r=%.1f,theta=%.1f)", x, y, r, theta);
+        }
     }
 }

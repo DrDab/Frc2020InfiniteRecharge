@@ -54,6 +54,7 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
     // If false, use zero curvature (assume path is a bunch of straight lines). This is less accurate.
     //
     private static final boolean USE_CURVED_PATH = true;
+    private static final boolean SYNC_GYRO_DATA = false;
 
     /**
      * This class implements the drive base odometry. It consists of the position as well as velocity info in all
@@ -61,13 +62,13 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
      */
     public static class Odometry
     {
-        TrcPose2D position;
-        TrcPose2D velocity;
+        public TrcPose2D position;
+        public TrcPose2D velocity;
 
         /**
          * Constructor: Create an instance of the object.
          */
-        Odometry()
+        public Odometry()
         {
             position = new TrcPose2D();
             velocity = new TrcPose2D();
@@ -79,7 +80,7 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
          * @param position specifies the initial position.
          * @param velocity specifies the initial velocity.
          */
-        Odometry(TrcPose2D position, TrcPose2D velocity)
+        public Odometry(TrcPose2D position, TrcPose2D velocity)
         {
             this.position = position;
             this.velocity = velocity;
@@ -134,30 +135,26 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
      */
     protected class MotorsState
     {
-        double prevTimestamp;
-        double currTimestamp;
-        double[] prevPositions;
-        double[] currPositions;
-        double[] currVelocities;
+        TrcOdometrySensor.Odometry[] prevMotorOdometries;
+        TrcOdometrySensor.Odometry[] currMotorOdometries;
         double[] stallStartTimes;
-        double[] motorPosDiffs;
 
         public String toString()
         {
-            return String.format(Locale.US, "time=%.3f/%.3f,prevPos=%s,currPos=%s,vel=%s",
-                    prevTimestamp, currTimestamp, Arrays.toString(prevPositions), Arrays.toString(currPositions),
-                    Arrays.toString(currVelocities));
+            return String.format(Locale.US, "odometry=%s", Arrays.toString(currMotorOdometries));
         }   //toString
 
     }   //class MotorsState
 
     /**
-     * This method is called periodically to calculate the position delta from the previous pose as well as velocity.
+     * This method is called periodically to calculate the delta between the previous and current motor odometries.
      *
-     * @param motorsState specifies the MotorsState object containing the relevant data to calculate odometry.
-     * @return an Odometry object describing the change in position and velocity since the last update.
+     * @param prevOdometries specifies the previous motor odometries.
+     * @param currOdometries specifies the current motor odometries.
+     * @return an Odometry object describing the odometry changes since the last update.
      */
-    protected abstract Odometry getOdometryDelta(MotorsState motorsState);
+    protected abstract Odometry getOdometryDelta(
+            TrcOdometrySensor.Odometry[] prevOdometries, TrcOdometrySensor.Odometry[] currOdometries);
 
     /**
      * This method implements tank drive where leftPower controls the left motors and right power controls the right
@@ -209,6 +206,7 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
     private boolean gyroAssistEnabled = false;
     private Stack<Odometry> referenceOdometryStack = new Stack<>();
     private Odometry referenceOdometry = null;
+    private boolean synchronizeOdometries = true;
     // Change of basis matrices to convert between coordinate systems
     private final RealMatrix enuToNwuChangeOfBasis = MatrixUtils
         .createRealMatrix(new double[][] { { 0, 1 }, { -1, 0 } });
@@ -234,16 +232,19 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
 
         odometry = new Odometry();
         motorsState = new MotorsState();
-        motorsState.motorPosDiffs = new double[motors.length];
-        motorsState.currPositions = new double[motors.length];
-        motorsState.currVelocities = new double[motors.length];
-        motorsState.prevPositions = new double[motors.length];
+        motorsState.prevMotorOdometries = new TrcOdometrySensor.Odometry[motors.length];
+        motorsState.currMotorOdometries = new TrcOdometrySensor.Odometry[motors.length];
         motorsState.stallStartTimes = new double[motors.length];
+        for (int i = 0; i < motors.length; i++)
+        {
+            motorsState.prevMotorOdometries[i] = null;
+            motorsState.currMotorOdometries[i] = new TrcOdometrySensor.Odometry(motors[i]);
+        }
         resetOdometry(true, true);
-        xScale = yScale = angleScale = 1.0;
         resetStallTimers();
+        xScale = yScale = angleScale = 1.0;
 
-        TrcTaskMgr taskMgr = TrcTaskMgr.getInstance();
+            TrcTaskMgr taskMgr = TrcTaskMgr.getInstance();
         odometryTaskObj = taskMgr.createTask(moduleName + ".odometryTask", this::odometryTask);
         stopTaskObj = taskMgr.createTask(moduleName + ".stopTask", this::stopTask);
         stopTaskObj.registerTask(TrcTaskMgr.TaskType.STOP_TASK);
@@ -258,6 +259,32 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
     {
         this(motors, null);
     }   //TrcDriveBase
+
+    /**
+     * This method checks if synchronize odometries is enabled.
+     *
+     * @return true if it is enabled, false if it is disabled.
+     */
+    public boolean isSynchronizeOdometriesEnabled()
+    {
+        synchronized (odometry)
+        {
+            return synchronizeOdometries;
+        }
+    }   //isSynchronizeOdometriesEnabled
+
+    /**
+     * This method enables/disables synchronize odometries.
+     *
+     * @param synchronizeOdometries specifies true to enable, false to disable.
+     */
+    public void setSynchronizeOdometriesEnabled(boolean synchronizeOdometries)
+    {
+        synchronized (odometry)
+        {
+            this.synchronizeOdometries = synchronizeOdometries;
+        }
+    }   //setSynchronizeOdometriesEnabled
 
     /**
      * This method is called to enable/disable the odometry task that keeps track of the robot position and orientation.
@@ -277,10 +304,12 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
         {
             resetOdometry(false, false);
             odometryTaskObj.registerTask(TrcTaskMgr.TaskType.STANDALONE_TASK, TrcTaskMgr.INPUT_THREAD_INTERVAL);
+//            odometryTaskObj.registerTask(TrcTaskMgr.TaskType.INPUT_TASK);
         }
         else
         {
             odometryTaskObj.unregisterTask(TrcTaskMgr.TaskType.STANDALONE_TASK);
+//            odometryTaskObj.unregisterTask(TrcTaskMgr.TaskType.INPUT_TASK);
         }
 
         if (debugEnabled)
@@ -391,7 +420,7 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
         synchronized (odometry)
         {
             return referenceOdometry == null ?
-                    getFieldPosition() : getPositionRelativeTo(referenceOdometry.position);
+                    getFieldPosition() : getPositionRelativeTo(referenceOdometry.position, true);
         }
     }   //getRelativePosition
 
@@ -481,7 +510,8 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
             if (!referenceOdometryStack.empty())
             {
                 referenceOdometry = referenceOdometryStack.pop();
-            } else
+            }
+            else
             {
                 referenceOdometry = null;
             }
@@ -509,13 +539,16 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
             dbgTrace.traceExit(funcName, TrcDbgTrace.TraceLevel.API);
         }
 
-        this.xScale = xScale;
-        this.yScale = yScale;
-        this.angleScale = angleScale;
-
-        if (driveBaseOdometry != null)
+        synchronized (odometry)
         {
-            driveBaseOdometry.setOdometryScales(xScale, yScale, angleScale);
+            this.xScale = xScale;
+            this.yScale = yScale;
+            this.angleScale = angleScale;
+
+            if (driveBaseOdometry != null)
+            {
+                driveBaseOdometry.setOdometryScales(xScale, yScale, angleScale);
+            }
         }
     }   //setOdometryScales
 
@@ -693,33 +726,39 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
 
         synchronized (odometry)
         {
+            clearReferenceOdometry();
+
             if (driveBaseOdometry != null)
             {
                 driveBaseOdometry.resetOdometry(resetHardware, resetAngle);
             }
             else
             {
-                clearReferenceOdometry();
-                motorsState.prevTimestamp = motorsState.currTimestamp = TrcUtil.getCurrentTime();
-
                 for (int i = 0; i < motors.length; i++)
                 {
                     motors[i].resetPosition(resetHardware);
-                    motorsState.currPositions[i] = 0.0;
-                    motorsState.currVelocities[i] = 0.0;
-                    motorsState.prevPositions[i] = 0.0;
-                    motorsState.stallStartTimes[i] = motorsState.currTimestamp;
+                    motorsState.prevMotorOdometries[i] = null;
+                    motorsState.currMotorOdometries[i].prevTimestamp
+                            = motorsState.currMotorOdometries[i].currTimestamp
+                            = motorsState.stallStartTimes[i]
+                            = TrcUtil.getCurrentTime();
+                    motorsState.currMotorOdometries[i].prevPos
+                            = motorsState.currMotorOdometries[i].currPos
+                            = motorsState.currMotorOdometries[i].velocity = 0.0;
                 }
 
-                odometry.position.x = odometry.position.y = 0.0;
-                odometry.velocity.x = odometry.velocity.y = 0.0;
-
-                if (gyro != null && resetAngle)
+                if (resetAngle)
                 {
-                    gyro.resetZIntegrator();
+                    if (gyro != null)
+                    {
+                        gyro.resetZIntegrator();
+                    }
                     odometry.position.angle = odometry.velocity.angle = 0.0;
                 }
             }
+
+            odometry.position.x = odometry.position.y = 0.0;
+            odometry.velocity.x = odometry.velocity.y = 0.0;
         }
 
         if (debugEnabled)
@@ -755,7 +794,11 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
      */
     public void setDriveBaseOdometry(TrcDriveBaseOdometry driveBaseOdometry)
     {
-        this.driveBaseOdometry = driveBaseOdometry;
+        synchronized (odometry)
+        {
+            this.driveBaseOdometry = driveBaseOdometry;
+            resetOdometry(false, true);
+        }
     }   //setDriveBaseOdometry
 
     /**
@@ -1524,49 +1567,60 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
                 //
                 // Update all motor states.
                 //
-                motorsState.prevTimestamp = motorsState.currTimestamp;
-                motorsState.currTimestamp = TrcUtil.getCurrentTime();
-
                 for (int i = 0; i < motors.length; i++)
                 {
-                    motorsState.prevPositions[i] = motorsState.currPositions[i];
+                    motorsState.prevMotorOdometries[i] = motorsState.currMotorOdometries[i];
+                    motorsState.currMotorOdometries[i] = motors[i].getOdometry();
 
-                    try
+                    if (motorsState.currMotorOdometries[i].currPos != motorsState.currMotorOdometries[i].prevPos ||
+                        motors[i].getPower() == 0.0)
                     {
-                        motorsState.currPositions[i] = motors[i].getPosition();
+                        motorsState.stallStartTimes[i] = motorsState.currMotorOdometries[i].currTimestamp;
                     }
-                    catch (UnsupportedOperationException e)
-                    {
-                        motorsState.currPositions[i] = 0.0;
-                    }
+                }
 
-                    motorsState.motorPosDiffs[i] = motorsState.currPositions[i] - motorsState.prevPositions[i];
-
-                    try
-                    {
-                        motorsState.currVelocities[i] = motors[i].getVelocity();
-                    }
-                    catch (UnsupportedOperationException e)
-                    {
-                        motorsState.currVelocities[i] = 0.0;
-                    }
-
-                    if (motorsState.currPositions[i] != motorsState.prevPositions[i] || motors[i].getPower() == 0.0)
-                    {
-                        motorsState.stallStartTimes[i] = motorsState.currTimestamp;
-                    }
+                if (synchronizeOdometries)
+                {
+                    synchronizeOdometries(motorsState.currMotorOdometries);
                 }
                 //
                 // Calculate pose delta from last pose and update odometry accordingly.
                 //
-                odometryDelta = getOdometryDelta(motorsState);
+                odometryDelta = getOdometryDelta(motorsState.prevMotorOdometries, motorsState.currMotorOdometries);
                 if (gyro != null)
                 {
+                    TrcOdometrySensor.Odometry gyroOdometry = gyro.getOdometry();
+
+                    if (SYNC_GYRO_DATA)
+                    {
+                        if (debugEnabled)
+                        {
+                            dbgTrace.traceInfo(funcName, "Gyro Before: timestamp=%.3f, pos=%.1f, vel=%.1f",
+                                    gyroOdometry.currTimestamp, gyroOdometry.currPos, gyroOdometry.velocity);
+                        }
+
+                        double refTimestamp = motorsState.currMotorOdometries[0].currTimestamp;
+                        gyroOdometry.currPos -= gyroOdometry.velocity * (gyroOdometry.currTimestamp - refTimestamp);
+                        gyroOdometry.currTimestamp = refTimestamp;
+                        if (debugEnabled)
+                        {
+                            dbgTrace.traceInfo(funcName, "Gyro After: timestamp=%.3f, pos=%.1f, vel=%.1f",
+                                    gyroOdometry.currTimestamp, gyroOdometry.currPos, gyroOdometry.velocity);
+                        }
+                    }
                     // Overwrite the angle/turnrate values if gyro present, since that's more accurate
-                    odometryDelta.position.angle = gyro.getZHeading().value - odometry.position.angle;
-                    odometryDelta.velocity.angle = gyro.getZRotationRate().value;
+                    odometryDelta.position.angle = gyroOdometry.currPos - odometry.position.angle;
+                    odometryDelta.velocity.angle = gyroOdometry.velocity;
                 }
+
                 updateOdometry(odometryDelta, odometry.position.angle);
+
+                if (debugEnabled)
+                {
+                    dbgTrace.traceInfo(funcName, "motorsState: %s", motorsState);
+                    dbgTrace.traceInfo(funcName, "delta: %s", odometryDelta);
+                    dbgTrace.traceInfo(funcName, "odometry: %s", odometry);
+                }
             }
         }
 
@@ -1598,6 +1652,49 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
             dbgTrace.traceExit(funcName, TrcDbgTrace.TraceLevel.TASK);
         }
     }   //stopTask
+
+    /**
+     * This method synchronizes the odometries of all the drive base motors. Since all motors are read at different
+     * times, the delay may cause inconsistencies on the odometry data which will affect the accuracy of the drive
+     * base odometry calculation. We will make all motors based off of the timestamp of the last motor and their
+     * position data will be interpolated accordingly. In effect, we are fast forwarding the other motors to sync
+     * with the latest timestamp and predicting their positions with their velocity info.
+     *
+     * @param odometries specifies the array of odometries of all drive base motors.
+     */
+    private void synchronizeOdometries(TrcOdometrySensor.Odometry[] odometries)
+    {
+        final String funcName = "synchronizeOdometries";
+        int lastIndex = odometries.length - 1;
+        double refTimestamp = odometries[lastIndex].currTimestamp;
+
+        for (int i = 0; i < lastIndex; i++)
+        {
+            if (debugEnabled)
+            {
+                dbgTrace.traceInfo(funcName, "[%d] Before: name=%s, timestamp=%.3f, pos=%.1f, vel=%.1f",
+                        i, odometries[i].sensor, odometries[i].currTimestamp, odometries[i].currPos,
+                        odometries[i].velocity);
+            }
+
+            odometries[i].currPos -= odometries[i].velocity * (odometries[i].currTimestamp - refTimestamp);
+            odometries[i].currTimestamp = refTimestamp;
+
+            if (debugEnabled)
+            {
+                dbgTrace.traceInfo(funcName, "[%d] After: name=%s, timestamp=%.3f, pos=%.1f, vel=%.1f",
+                        i, odometries[i].sensor, odometries[i].currTimestamp, odometries[i].currPos,
+                        odometries[i].velocity);
+            }
+        }
+
+        if (debugEnabled)
+        {
+            dbgTrace.traceInfo(funcName, "[%d] Reference: name=%s, timestamp=%.3f, pos=%.1f, vel=%.1f",
+                    lastIndex, odometries[lastIndex].sensor, odometries[lastIndex].currTimestamp,
+                    odometries[lastIndex].currPos, odometries[lastIndex].velocity);
+        }
+    }   //synchronizeOdometries
 
     /**
      * This method updates the current robot odometry with the delta either using 0 or 1st order dynamics depending on
@@ -1682,12 +1779,6 @@ public abstract class TrcDriveBase implements TrcExclusiveSubsystem
             odometry.velocity.y = vel.getEntry(1);
             odometry.position.angle += delta.position.angle;
             odometry.velocity.angle = delta.velocity.angle;
-        }
-
-        if (debugEnabled)
-        {
-            dbgTrace.traceInfo(funcName, "delta=%s,angle=%.1f", delta, angle);
-            dbgTrace.traceInfo(funcName, "odometry=%s", odometry);
         }
     }   //updateOdometry
 

@@ -48,7 +48,7 @@ public class TrcSpuriousFilter extends TrcFilter
         this.instanceName = instanceName;
         this.distanceThreshold = distanceThreshold;
         this.tracer = tracer;
-        prevData = null;
+        reset();
     }   //TrcSpuriousFilter
 
     /**
@@ -76,6 +76,15 @@ public class TrcSpuriousFilter extends TrcFilter
     //
     // Implements TrcFilter abstract methods.
     //
+
+    /**
+     * This method resets the filter.
+     */
+    @Override
+    public void reset()
+    {
+        prevData = null;
+    }   //reset
 
     /**
      * This method returns the filtered data.

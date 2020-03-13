@@ -24,7 +24,7 @@ package trclib;
 
 /**
  * This class implements a platform independent Swerve Drive module. A Swerve Drive module consists of a drive motor
- * and a steer motor. The steer motor is a PID controlled motor with zero calibration limit switches that allows an
+ * and a steer motor. The steer motor is a PID controlled motor with a zero calibration limit switch that allows an
  * absolute steering angle to be set and held. It implements the TrcMotorController interface so that it can be used
  * in TrcDriveBase.
  */
@@ -43,7 +43,6 @@ public class TrcSwerveModule implements TrcMotorController
     public final TrcPidMotor steerMotor;
     public final TrcEnhancedServo steerServo;
     private TrcWarpSpace warpSpace;
-    private double prevSteerAngle = 0.0;
     private double optimizedWheelDir = 1.0;
     private boolean steerLimitsEnabled = false;
     private double steerLowLimit = 0.0;
@@ -58,14 +57,14 @@ public class TrcSwerveModule implements TrcMotorController
      * @param steerMotor   specifies the steering motor.
      * @param steerServo   specifies the steering servo.
      */
-    private TrcSwerveModule(String instanceName, TrcMotorController driveMotor, TrcPidMotor steerMotor,
-        TrcEnhancedServo steerServo)
+    private TrcSwerveModule(
+            String instanceName, TrcMotorController driveMotor, TrcPidMotor steerMotor, TrcEnhancedServo steerServo)
     {
         if (debugEnabled)
         {
             dbgTrace = useGlobalTracer ?
-                TrcDbgTrace.getGlobalTracer() :
-                new TrcDbgTrace(moduleName, tracingEnabled, traceLevel, msgLevel);
+                        TrcDbgTrace.getGlobalTracer() :
+                        new TrcDbgTrace(moduleName, tracingEnabled, traceLevel, msgLevel);
         }
 
         this.instanceName = instanceName;
@@ -73,7 +72,6 @@ public class TrcSwerveModule implements TrcMotorController
         this.steerMotor = steerMotor;
         this.steerServo = steerServo;
         warpSpace = new TrcWarpSpace(instanceName + ".warpSpace", 0.0, 360.0);
-        this.prevSteerAngle = getSteerAngle();
     }   //TrcSwerveModule
 
     /**
@@ -207,6 +205,7 @@ public class TrcSwerveModule implements TrcMotorController
     public void setSteerAngle(double angle, boolean optimize, boolean hold)
     {
         final String funcName = "setSteerAngle";
+        double prevSteerAngle = getSteerAngle();
         angle = warpSpace.getOptimizedTarget(angle, prevSteerAngle);
         double angleDelta = angle - prevSteerAngle;
         double newAngle = angle;
@@ -258,7 +257,6 @@ public class TrcSwerveModule implements TrcMotorController
             steerServo.setPosition(newAngle / 360.0);
 //            steerServo.setPosition(TrcUtil.modulo(newAngle, 360.0) / 360.0);
         }
-        prevSteerAngle = newAngle;
 
         if (debugEnabled)
         {
@@ -377,9 +375,9 @@ public class TrcSwerveModule implements TrcMotorController
     }   //getPower
 
     /**
-     * This method returns the velocity of the motor rotation.
+     * This method returns the velocity of the motor rotation in sensor unit per second.
      *
-     * @return motor rotation velocity.
+     * @return motor rotation velocity in sensor unit per second.
      */
     @Override
     public double getVelocity()
@@ -553,5 +551,35 @@ public class TrcSwerveModule implements TrcMotorController
     {
         throw new UnsupportedOperationException("Drive wheel does not support soft limits.");
     }   //setSoftUpperLimit
+
+    //
+    // Implements TrcOdometrySensor interface.
+    //
+
+    /**
+     * This method resets the odometry data and sensor.
+     *
+     * @param resetHardware specifies true to do a hardware reset, false to do a software reset. Hardware reset may
+     *                      require some time to complete and will block this method from returning until finish.
+     */
+    @Override
+    public void resetOdometry(boolean resetHardware)
+    {
+        driveMotor.resetOdometry(resetHardware);
+    }   //resetOdometry
+
+    /**
+     * This method returns a copy of the odometry data. It must be a copy so it won't change while the caller is
+     * accessing the data fields.
+     *
+     * @return a copy of the odometry data.
+     */
+    @Override
+    public Odometry getOdometry()
+    {
+        Odometry odometry = driveMotor.getOdometry();
+        odometry.sensor = this;
+        return odometry;
+    }   //getOdometry
 
 }   //class TrcSwerveModule

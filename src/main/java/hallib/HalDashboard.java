@@ -27,6 +27,7 @@ import java.util.Set;
 
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.wpilibj.Sendable;
+import edu.wpi.first.wpilibj.smartdashboard.SendableRegistry;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import trclib.TrcDbgTrace;
 
@@ -62,8 +63,9 @@ public class HalDashboard
     {
         if (debugEnabled)
         {
-            dbgTrace = useGlobalTracer ? TrcDbgTrace.getGlobalTracer()
-                : new TrcDbgTrace(moduleName, tracingEnabled, traceLevel, msgLevel);
+            dbgTrace = useGlobalTracer ?
+                TrcDbgTrace.getGlobalTracer() :
+                new TrcDbgTrace(moduleName, tracingEnabled, traceLevel, msgLevel);
         }
 
         instance = this;
@@ -85,12 +87,9 @@ public class HalDashboard
      * This method displays a formatted message to the display on the Driver
      * Station.
      *
-     * @param lineNum
-     *                    specifies the line number on the display.
-     * @param format
-     *                    specifies the format string.
-     * @param args
-     *                    specifies variable number of substitution arguments.
+     * @param lineNum specifies the line number on the display.
+     * @param format  specifies the format string.
+     * @param args    specifies variable number of substitution arguments.
      */
     public void displayPrintf(int lineNum, String format, Object... args)
     {
@@ -141,17 +140,26 @@ public class HalDashboard
     } // refreshDisplay
 
     /**
+     * Refreshes the entry value. If the entry doesn't exist, create it with the corresponding value.
+     *
+     * @param key          The name of the entry.
+     * @param defaultValue The value to create the entry with if it doesn't exist.
+     */
+    public static void refreshKey(String key, Object defaultValue)
+    {
+        SmartDashboard.getEntry(key).setDefaultValue(defaultValue);
+    }
+
+    /**
      * This method returns the value associated with the given key. If the key
      * does not already exist, it will create the key and put the default value
      * in it and also return the default value.
      *
-     * @param key
-     *                         specifies the key.
-     * @param defaultValue
-     *                         specifies the default value if the key does not
-     *                         already exist.
+     * @param key          specifies the key.
+     * @param defaultValue specifies the default value if the key does not
+     *                     already exist.
      * @return value associated with the key or the default value if key does
-     *         not exist.
+     * not exist.
      */
     public static double getNumber(String key, double defaultValue)
     {
@@ -174,13 +182,11 @@ public class HalDashboard
      * does not already exist, it will create the key and put the default value
      * in it and also return the default value.
      *
-     * @param key
-     *                         specifies the key.
-     * @param defaultValue
-     *                         specifies the default value if the key does not
-     *                         already exist.
+     * @param key          specifies the key.
+     * @param defaultValue specifies the default value if the key does not
+     *                     already exist.
      * @return value associated with the key or the default value if key does
-     *         not exist.
+     * not exist.
      */
     public static String getString(String key, String defaultValue)
     {
@@ -203,12 +209,9 @@ public class HalDashboard
      * not be null. The value can be retrieved by calling the get method with a
      * key that is equal to the original key.
      *
-     * @param key
-     *                 the key
-     * @param data
-     *                 the value
-     * @throws IllegalArgumentException
-     *                                      If key is null
+     * @param key  the key
+     * @param data the value
+     * @throws IllegalArgumentException If key is null
      */
     public static synchronized void putData(String key, Sendable data)
     {
@@ -217,28 +220,24 @@ public class HalDashboard
 
     /**
      * Maps the specified key (where the key is the name of the
-     * {@link NamedSendable} to the specified value in this table. The value can
+     * {@link Sendable} to the specified value in this table. The value can
      * be retrieved by calling the get method with a key that is equal to the
      * original key.
      *
-     * @param value
-     *                  the value
-     * @throws IllegalArgumentException
-     *                                      If key is null
+     * @param value the value
+     * @throws IllegalArgumentException If key is null
      */
     public static void putData(Sendable value)
     {
-        putData(value.getName(), value);
+        SmartDashboard.putData(value);
     }
 
     /**
      * Returns the value at the specified key.
      *
-     * @param key
-     *                the key
+     * @param key the key
      * @return the value
-     * @throws IllegalArgumentException
-     *                                      if the key is null
+     * @throws IllegalArgumentException if the key is null
      */
     public static synchronized Sendable getData(String key)
     {
@@ -247,9 +246,8 @@ public class HalDashboard
 
     /**
      * Gets the entry for the specified key.
-     * 
-     * @param key
-     *                the key name
+     *
+     * @param key the key name
      * @return Network table entry.
      */
     public static NetworkTableEntry getEntry(String key)
@@ -260,8 +258,7 @@ public class HalDashboard
     /**
      * Checks the table and tells if it contains the specified key.
      *
-     * @param key
-     *                the key to search for
+     * @param key the key to search for
      * @return true if the table as a value assigned to the given key
      */
     public static boolean containsKey(String key)
@@ -272,8 +269,7 @@ public class HalDashboard
     /**
      * Get the keys stored in the SmartDashboard table of NetworkTables.
      *
-     * @param types
-     *                  bitmask of types; 0 is treated as a "don't care".
+     * @param types bitmask of types; 0 is treated as a "don't care".
      * @return keys currently in the table
      */
     public static Set<String> getKeys(int types)
@@ -295,8 +291,7 @@ public class HalDashboard
      * Makes a key's value persistent through program restarts. The key cannot
      * be null.
      *
-     * @param key
-     *                the key name
+     * @param key the key name
      */
     public static void setPersistent(String key)
     {
@@ -307,8 +302,7 @@ public class HalDashboard
      * Stop making a key's value persistent through program restarts. The key
      * cannot be null.
      *
-     * @param key
-     *                the key name
+     * @param key the key name
      */
     public static void clearPersistent(String key)
     {
@@ -319,8 +313,7 @@ public class HalDashboard
      * Returns whether the value is persistent through program restarts. The key
      * cannot be null.
      *
-     * @param key
-     *                the key name
+     * @param key the key name
      * @return True if the value is persistent.
      */
     public static boolean isPersistent(String key)
@@ -331,10 +324,8 @@ public class HalDashboard
     /**
      * Sets flags on the specified key in this table. The key can not be null.
      *
-     * @param key
-     *                  the key name
-     * @param flags
-     *                  the flags to set (bitmask)
+     * @param key   the key name
+     * @param flags the flags to set (bitmask)
      */
     public static void setFlags(String key, int flags)
     {
@@ -344,10 +335,8 @@ public class HalDashboard
     /**
      * Clears flags on the specified key in this table. The key can not be null.
      *
-     * @param key
-     *                  the key name
-     * @param flags
-     *                  the flags to clear (bitmask)
+     * @param key   the key name
+     * @param flags the flags to clear (bitmask)
      */
     public static void clearFlags(String key, int flags)
     {
@@ -357,8 +346,7 @@ public class HalDashboard
     /**
      * Returns the flags for the specified key.
      *
-     * @param key
-     *                the key name
+     * @param key the key name
      * @return the flags, or 0 if the key is not defined
      */
     public static int getFlags(String key)
@@ -369,8 +357,7 @@ public class HalDashboard
     /**
      * Deletes the specified key in this table. The key can not be null.
      *
-     * @param key
-     *                the key name
+     * @param key the key name
      */
     public static void delete(String key)
     {
@@ -379,11 +366,9 @@ public class HalDashboard
 
     /**
      * Put a boolean in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putBoolean(String key, boolean value)
@@ -393,11 +378,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultBoolean(String key, boolean defaultValue)
@@ -408,13 +391,11 @@ public class HalDashboard
     /**
      * Returns the boolean the key maps to. If the key does not exist or is of
      * different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static boolean getBoolean(String key, boolean defaultValue)
     {
@@ -423,11 +404,9 @@ public class HalDashboard
 
     /**
      * Put a number in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putNumber(String key, double value)
@@ -437,11 +416,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultNumber(String key, double defaultValue)
@@ -451,11 +428,9 @@ public class HalDashboard
 
     /**
      * Put a string in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putString(String key, String value)
@@ -465,11 +440,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultString(String key, String defaultValue)
@@ -479,11 +452,9 @@ public class HalDashboard
 
     /**
      * Put a boolean array in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putBooleanArray(String key, boolean[] value)
@@ -493,11 +464,9 @@ public class HalDashboard
 
     /**
      * Put a boolean array in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putBooleanArray(String key, Boolean[] value)
@@ -507,11 +476,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultBooleanArray(String key, boolean[] defaultValue)
@@ -521,11 +488,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultBooleanArray(String key, Boolean[] defaultValue)
@@ -536,13 +501,11 @@ public class HalDashboard
     /**
      * Returns the boolean array the key maps to. If the key does not exist or
      * is of different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static boolean[] getBooleanArray(String key, boolean[] defaultValue)
     {
@@ -552,13 +515,11 @@ public class HalDashboard
     /**
      * Returns the boolean array the key maps to. If the key does not exist or
      * is of different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static Boolean[] getBooleanArray(String key, Boolean[] defaultValue)
     {
@@ -567,11 +528,9 @@ public class HalDashboard
 
     /**
      * Put a number array in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putNumberArray(String key, double[] value)
@@ -581,11 +540,9 @@ public class HalDashboard
 
     /**
      * Put a number array in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putNumberArray(String key, Double[] value)
@@ -595,11 +552,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultNumberArray(String key, double[] defaultValue)
@@ -609,11 +564,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultNumberArray(String key, Double[] defaultValue)
@@ -624,13 +577,11 @@ public class HalDashboard
     /**
      * Returns the number array the key maps to. If the key does not exist or is
      * of different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static double[] getNumberArray(String key, double[] defaultValue)
     {
@@ -640,13 +591,11 @@ public class HalDashboard
     /**
      * Returns the number array the key maps to. If the key does not exist or is
      * of different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static Double[] getNumberArray(String key, Double[] defaultValue)
     {
@@ -655,11 +604,9 @@ public class HalDashboard
 
     /**
      * Put a string array in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putStringArray(String key, String[] value)
@@ -669,11 +616,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultStringArray(String key, String[] defaultValue)
@@ -684,13 +629,11 @@ public class HalDashboard
     /**
      * Returns the string array the key maps to. If the key does not exist or is
      * of different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static String[] getStringArray(String key, String[] defaultValue)
     {
@@ -699,11 +642,9 @@ public class HalDashboard
 
     /**
      * Put a raw value (byte array) in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
      * @return False if the table key already exists with a different type
      */
     public static boolean putRaw(String key, byte[] value)
@@ -713,13 +654,10 @@ public class HalDashboard
 
     /**
      * Put a raw value (bytes from a byte buffer) in the table.
-     * 
-     * @param key
-     *                  the key to be assigned to
-     * @param value
-     *                  the value that will be assigned
-     * @param len
-     *                  the length of the value
+     *
+     * @param key   the key to be assigned to
+     * @param value the value that will be assigned
+     * @param len   the length of the value
      * @return False if the table key already exists with a different type
      */
     public static boolean putRaw(String key, ByteBuffer value, int len)
@@ -729,11 +667,9 @@ public class HalDashboard
 
     /**
      * Gets the current value in the table, setting it if it does not exist.
-     * 
-     * @param key
-     *                         the key
-     * @param defaultValue
-     *                         the default value to set if key does not exist.
+     *
+     * @param key          the key
+     * @param defaultValue the default value to set if key does not exist.
      * @return False if the table key exists with a different type
      */
     public static boolean setDefaultRaw(String key, byte[] defaultValue)
@@ -744,13 +680,11 @@ public class HalDashboard
     /**
      * Returns the raw value (byte array) the key maps to. If the key does not
      * exist or is of different type, it will return the default value.
-     * 
-     * @param key
-     *                         the key to look up
-     * @param defaultValue
-     *                         the value to be returned if no value is found
+     *
+     * @param key          the key to look up
+     * @param defaultValue the value to be returned if no value is found
      * @return the value associated with the given key or the given default
-     *         value if there is no value associated with the key
+     * value if there is no value associated with the key
      */
     public static byte[] getRaw(String key, byte[] defaultValue)
     {

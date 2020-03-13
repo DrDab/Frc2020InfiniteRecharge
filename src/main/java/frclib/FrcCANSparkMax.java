@@ -251,7 +251,7 @@ public class FrcCANSparkMax extends TrcMotor
      * This method returns the motor position by reading the position sensor. The position sensor can be an encoder
      * or a potentiometer.
      *
-     * @return current motor position.
+     * @return current motor position in native unit (number of motor rotations).
      */
     @Override
     public double getMotorPosition()
@@ -272,6 +272,32 @@ public class FrcCANSparkMax extends TrcMotor
 
         return currPos;
     }   //getMotorPosition
+
+    /**
+     * This method returns the motor velocity from the platform dependent motor hardware. If the hardware does
+     * not support velocity info, it should throw an UnsupportedOperationException.
+     *
+     * @return current motor velocity in native unit per second (RPS).
+     */
+    @Override
+    public double getMotorVelocity()
+    {
+        final String funcName = "getMotorVelocity";
+
+        if (debugEnabled)
+        {
+            dbgTrace.traceEnter(funcName, TrcDbgTrace.TraceLevel.API);
+        }
+
+        double currVel = encoder.getVelocity() * encoderSign / 60.0;
+
+        if (debugEnabled)
+        {
+            dbgTrace.traceExit(funcName, TrcDbgTrace.TraceLevel.API, "=%d", currVel);
+        }
+
+        return currVel;
+    }   //getMotorVelocity
 
     /**
      * This method sets the raw motor power.
@@ -354,7 +380,7 @@ public class FrcCANSparkMax extends TrcMotor
     public double getPower()
     {
         final String funcName = "getPower";
-        double power = motor.get();
+        double power = motor.getAppliedOutput();
 
         if (debugEnabled)
         {
@@ -445,7 +471,7 @@ public class FrcCANSparkMax extends TrcMotor
         if (hardware)
         {
             CANError error = encoder.setPosition(0.0);
-            if (error != CANError.kOK)
+            if (error != CANError.kOk)
             {
                 TrcDbgTrace.getGlobalTracer().traceErr(funcName, "resetPosition() on SparkMax %d failed with error %s!", motor.getDeviceId(),
                     error.name());

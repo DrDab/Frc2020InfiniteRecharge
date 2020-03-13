@@ -43,9 +43,6 @@ public class TrcPidDrive
     private static final TrcDbgTrace.MsgLevel msgLevel = TrcDbgTrace.MsgLevel.INFO;
     private static final boolean verbosePidInfo = false;
     private TrcDbgTrace dbgTrace = null;
-    private TrcDbgTrace msgTracer = null;
-    private TrcRobotBattery battery = null;
-    private boolean tracePidInfo = false;
 
     /**
      * This interface provides a stuck wheel notification handler. It is useful for detecting drive base motor
@@ -85,6 +82,10 @@ public class TrcPidDrive
     private final TrcPidController turnPidCtrl;
     private final TrcTaskMgr.TaskObject driveTaskObj;
     private final TrcTaskMgr.TaskObject stopTaskObj;
+    private TrcDbgTrace msgTracer = null;
+    private TrcRobotBattery battery = null;
+    private boolean logRobotPoseEvents = false;
+    private boolean tracePidInfo = false;
     private boolean savedReferencePose = false;
     private TrcWarpSpace warpSpace = null;
     private boolean warpSpaceEnabled = true;
@@ -187,12 +188,15 @@ public class TrcPidDrive
      * This method sets the message tracer for logging trace messages.
      *
      * @param tracer specifies the tracer for logging messages.
+     * @param logRobotPoseEvents specifies true to log robot pose events, false otherwise.
      * @param tracePidInfo specifies true to enable tracing of PID info, false otherwise.
      * @param battery specifies the battery object to get battery info for the message.
      */
-    public synchronized void setMsgTracer(TrcDbgTrace tracer, boolean tracePidInfo, TrcRobotBattery battery)
+    public synchronized void setMsgTracer(
+        TrcDbgTrace tracer, boolean logRobotPoseEvents, boolean tracePidInfo, TrcRobotBattery battery)
     {
         this.msgTracer = tracer;
+        this.logRobotPoseEvents = logRobotPoseEvents;
         this.tracePidInfo = tracePidInfo;
         this.battery = battery;
     }   //setMsgTracer
@@ -201,11 +205,12 @@ public class TrcPidDrive
      * This method sets the message tracer for logging trace messages.
      *
      * @param tracer specifies the tracer for logging messages.
+     * @param logRobotPoseEvents specifies true to log robot pose events, false otherwise.
      * @param tracePidInfo specifies true to enable tracing of PID info, false otherwise.
      */
-    public void setMsgTracer(TrcDbgTrace tracer, boolean tracePidInfo)
+    public void setMsgTracer(TrcDbgTrace tracer, boolean logRobotPoseEvents, boolean tracePidInfo)
     {
-        setMsgTracer(tracer, tracePidInfo, null);
+        setMsgTracer(tracer, logRobotPoseEvents, tracePidInfo, null);
     }   //setMsgTracer
 
     /**
@@ -215,7 +220,7 @@ public class TrcPidDrive
      */
     public void setMsgTracer(TrcDbgTrace tracer)
     {
-        setMsgTracer(tracer, false, null);
+        setMsgTracer(tracer, false, false, null);
     }   //setMsgTracer
 
     /**
@@ -808,8 +813,18 @@ public class TrcPidDrive
 
             TrcPose2D newTargetPose = new TrcPose2D(absX, absY, absHeading);
             TrcPose2D currRobotPose = driveBase.getFieldPosition();
+            //
+            // RelativeTo will calculate delta X and delta Y between the target and current positions relative to the
+            // field coordinates and it will rotate the (deltaX, deltaY) vector to the robot's heading, essentially
+            // returning deltaX and deltaY relative to the robot's heading instead of the field coordinates.
+            // Unfortunately, the current heading of the robot may not be the intended heading due to turn error.
+            // Therefore, before passing currRobotPose to relativeTo, we need to adjust the angle to the intended
+            // heading or else we will incorporate the heading error into the deltaX and deltaY calculation.
+            //
+            currRobotPose.angle = absHeading;
             TrcPose2D relativePose = newTargetPose.relativeTo(currRobotPose);
-            double turnTarget = turnPidCtrl.hasAbsoluteSetPoint()? newTargetPose.angle : relativePose.angle;
+            double turnTarget = turnPidCtrl.hasAbsoluteSetPoint()?
+                    newTargetPose.angle : newTargetPose.angle - currRobotPose.angle;
 
             if (debugEnabled)
             {
@@ -1244,11 +1259,20 @@ public class TrcPidDrive
             driveBase.curveDrive(owner, yPower, turnPower, false);
         }
 
-        if (msgTracer != null && tracePidInfo)
+        if (msgTracer != null)
         {
-            if (xPidCtrl != null) xPidCtrl.printPidInfo(msgTracer, verbosePidInfo, battery);
-            if (yPidCtrl != null) yPidCtrl.printPidInfo(msgTracer, verbosePidInfo, battery);
-            if (turnPidCtrl != null) turnPidCtrl.printPidInfo(msgTracer, verbosePidInfo, battery);
+            if (logRobotPoseEvents)
+            {
+                msgTracer.logEvent(instanceName, "RobotPose", "pose=\"%s\"", driveBase.getFieldPosition());
+
+            }
+
+            if (tracePidInfo)
+            {
+                if (xPidCtrl != null) xPidCtrl.printPidInfo(msgTracer, verbosePidInfo, battery);
+                if (yPidCtrl != null) yPidCtrl.printPidInfo(msgTracer, verbosePidInfo, battery);
+                if (turnPidCtrl != null) turnPidCtrl.printPidInfo(msgTracer, verbosePidInfo, battery);
+            }
         }
 
         if (debugEnabled)

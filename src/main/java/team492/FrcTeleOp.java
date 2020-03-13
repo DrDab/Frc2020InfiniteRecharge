@@ -22,28 +22,27 @@
 
 package team492;
 
+import edu.wpi.first.wpilibj.DriverStation;
 import frclib.FrcJoystick;
-import frclib.FrcRemoteVisionProcessor;
+import frclib.FrcXboxController;
 import hallib.HalDashboard;
-import trclib.TrcLoopPerformanceMonitor;
+import team492.Robot.DriveSpeed;
+import trclib.TrcElapsedTimer;
 import trclib.TrcRobot;
 import trclib.TrcRobot.RunMode;
+import trclib.TrcUtil;
 
 public class FrcTeleOp implements TrcRobot.RobotMode
 {
-    private enum DriveSpeed
-    {
-        SLOW, MEDIUM, FAST
-    }
 
     protected final Robot robot;
-    private DriveSpeed driveSpeed = DriveSpeed.MEDIUM;
     private boolean gyroAssist = false;
-    private TrcLoopPerformanceMonitor loopPerformanceMonitor;
+    private TrcElapsedTimer elapsedTimer = null;
 
     public FrcTeleOp(Robot robot)
     {
         this.robot = robot;
+        HalDashboard.putString("MatchTime", "N/A");
     }   // FrcTeleOp
 
     //
@@ -56,163 +55,95 @@ public class FrcTeleOp implements TrcRobot.RobotMode
         //
         // Configure joysticks.
         //
-        robot.leftDriveStick.setButtonHandler(this::leftDriveStickButtonEvent);
-        robot.leftDriveStick.setYInverted(true);
-
-        robot.rightDriveStick.setButtonHandler(this::rightDriveStickButtonEvent);
-        robot.rightDriveStick.setYInverted(true);
+        if (robot.preferences.useController)
+        {
+            robot.driverController.setButtonHandler(this::driverControllerButtonEvent);
+        }
+        else
+        {
+            robot.rightDriveStick.setButtonHandler(this::rightDriveStickButtonEvent);
+        }
 
         robot.operatorStick.setButtonHandler(this::operatorStickButtonEvent);
-        robot.operatorStick.setYInverted(false);
 
         robot.buttonPanel.setButtonHandler(this::buttonPanelButtonEvent);
 
         robot.switchPanel.setButtonHandler(this::switchPanelButtonEvent);
 
-        driveSpeed = DriveSpeed.MEDIUM;
+        robot.driveSpeed = DriveSpeed.MEDIUM;
+        robot.setDriveOrientation(Robot.DriveOrientation.FIELD);
+        robot.intake.setSpacingDistance(4);
+
+        robot.shooter.setManualOverrideEnabled(false);
+        robot.conveyor.setManualOverrideEnabled(false);
+        robot.shooter.setFlashlightEnabled(true);
 
         if (robot.preferences.useVision)
         {
-            robot.vision.setRingLightEnabled(true);
+            robot.vision.setEnabled(true);
         }
 
         if (robot.preferences.debugLoopTime)
         {
-            loopPerformanceMonitor = new TrcLoopPerformanceMonitor("TeleOpLoop", 1.0);
+            elapsedTimer = new TrcElapsedTimer("TeleOpLoop", 2.0);
         }
+
+        HalDashboard.putString("MatchTime", "N/A");
     }   // startMode
 
     @Override
     public void stopMode(RunMode prevMode, RunMode nextMode)
     {
+        robot.shooter.setFlashlightEnabled(false);
     } // stopMode
-
-    private void showStatus()
-    {
-        if (robot.preferences.useVision)
-        {
-            FrcRemoteVisionProcessor.RelativePose pose = robot.vision.getLastPose();
-            HalDashboard.putBoolean("Status/TapeDetected", pose != null);
-            if (pose == null)
-            {
-                robot.ledIndicator.signalNoVisionDetected();
-            }
-            else if (pose.x > RobotInfo.CAMERA_CENTERED_THRESHOLD)
-            {
-                robot.ledIndicator.signalVisionRight();
-            }
-            else if (pose.x < -RobotInfo.CAMERA_CENTERED_THRESHOLD)
-            {
-                robot.ledIndicator.signalVisionLeft();
-            }
-            else
-            {
-                robot.ledIndicator.signalVisionCentered();
-            }
-        }
-
-        HalDashboard.putString("Status/DriveSpeed", driveSpeed.toString());
-    }
 
     @Override
     public void runPeriodic(double elapsedTime)
     {
-        showStatus();
-
-        double leftDriveX = robot.leftDriveStick.getXWithDeadband(true);
-        double leftDriveY = robot.leftDriveStick.getYWithDeadband(true);
-        double rightDriveY = robot.rightDriveStick.getYWithDeadband(true);
-        double rightTwist = robot.rightDriveStick.getTwistWithDeadband(true);
-
         robot.updateDashboard(RunMode.TELEOP_MODE);
+        if (DriverStation.getInstance().isFMSAttached())
+        {
+            HalDashboard.putString("MatchTime", String.format("%.0f", DriverStation.getInstance().getMatchTime()));
+        }
+
+        if (Math.abs(robot.shooter.getPitchError()) <= 0.5)
+        {
+            robot.globalTracer
+                .traceInfo("FrcTeleOp.runPeriodic", "angle=%.2f,target=%.2f,err=%.2f, out=%.2f,iterm=%.2f",
+                    robot.shooter.getPitch(), robot.shooter.getTargetPitch(), robot.shooter.getPitchError(),
+                    robot.shooter.pitchMotor.getPower(), robot.shooter.getPitchITerm());
+        }
+
         //
         // DriveBase operation.
         //
-        switch (robot.driveMode)
+        double x = robot.getXInput();
+        double y = robot.getYInput();
+        double rot = robot.getRotInput();
+        double angle = robot.getDriveGyroAngle();
+
+        robot.driveBase.holonomicDrive(x, y, rot, angle);
+
+        if (robot.shooter.isManualOverrideEnabled())
         {
-            case HOLONOMIC_MODE:
-                double x = leftDriveX;
-                double y = rightDriveY;
-                double rot = rightTwist;
-                switch (driveSpeed)
-                {
-                    case SLOW:
-                        x *= RobotInfo.DRIVE_SLOW_XSCALE;
-                        y *= RobotInfo.DRIVE_SLOW_YSCALE;
-                        rot *= RobotInfo.DRIVE_SLOW_TURNSCALE;
-                        break;
+            robot.shooter.setPitchPower(robot.operatorStick.getYWithDeadband(false) * 0.5);
+            double flywheelPower = (1 - robot.operatorStick.getZ()) / 2.0;
+            flywheelPower = Math.abs(flywheelPower) > 0.15 ? flywheelPower : 0;
+            robot.shooter.setFlyWheelPower(flywheelPower);
+        }
 
-                    case MEDIUM:
-                        x *= RobotInfo.DRIVE_MEDIUM_XSCALE;
-                        y *= RobotInfo.DRIVE_MEDIUM_YSCALE;
-                        rot *= RobotInfo.DRIVE_MEDIUM_TURNSCALE;
-                        break;
-
-                    case FAST:
-                        x *= RobotInfo.DRIVE_FAST_XSCALE;
-                        y *= RobotInfo.DRIVE_FAST_YSCALE;
-                        rot *= RobotInfo.DRIVE_FAST_TURNSCALE;
-                        break;
-                }
-
-                if (robot.visionPidDrive == null || !robot.visionPidDrive.isActive())
-                {
-                    robot.driveBase.holonomicDrive(x, y, rot, robot.driveInverted);
-                }
+        switch (robot.driverController.getPOV())
+        {
+            case 0:
+                robot.driveSpeed = DriveSpeed.FAST;
                 break;
 
-            case TANK_MODE:
-                double leftPower = leftDriveY;
-                double rightPower = rightDriveY;
-                switch (driveSpeed)
-                {
-                    case SLOW:
-                        leftPower *= RobotInfo.DRIVE_SLOW_YSCALE;
-                        rightPower *= RobotInfo.DRIVE_SLOW_YSCALE;
-                        break;
-
-                    case MEDIUM:
-                        leftPower *= RobotInfo.DRIVE_MEDIUM_YSCALE;
-                        rightPower *= RobotInfo.DRIVE_MEDIUM_YSCALE;
-                        break;
-
-                    case FAST:
-                        leftPower *= RobotInfo.DRIVE_FAST_YSCALE;
-                        rightPower *= RobotInfo.DRIVE_FAST_YSCALE;
-                        break;
-                }
-
-                if (robot.visionPidDrive == null || !robot.visionPidDrive.isActive())
-                {
-                    robot.driveBase.tankDrive(leftPower, rightPower, robot.driveInverted);
-                }
+            case 270:
+                robot.driveSpeed = DriveSpeed.MEDIUM;
                 break;
 
-            case ARCADE_MODE:
-                double drivePower = rightDriveY;
-                double turnPower = rightTwist;
-                switch (driveSpeed)
-                {
-                    case SLOW:
-                        drivePower *= RobotInfo.DRIVE_SLOW_YSCALE;
-                        turnPower *= RobotInfo.DRIVE_SLOW_TURNSCALE;
-                        break;
-
-                    case MEDIUM:
-                        drivePower *= RobotInfo.DRIVE_MEDIUM_YSCALE;
-                        turnPower *= RobotInfo.DRIVE_MEDIUM_TURNSCALE;
-                        break;
-
-                    case FAST:
-                        drivePower *= RobotInfo.DRIVE_FAST_YSCALE;
-                        turnPower *= RobotInfo.DRIVE_FAST_TURNSCALE;
-                        break;
-                }
-
-                if (robot.visionPidDrive == null || !robot.visionPidDrive.isActive())
-                {
-                    robot.driveBase.arcadeDrive(drivePower, turnPower, robot.driveInverted);
-                }
+            case 180:
+                robot.driveSpeed = DriveSpeed.SLOW;
                 break;
         }
     }   // runPeriodic
@@ -220,119 +151,106 @@ public class FrcTeleOp implements TrcRobot.RobotMode
     @Override
     public void runContinuous(double elapsedTime)
     {
-        if (robot.preferences.debugLoopTime)
+        if (elapsedTimer != null)
         {
-            loopPerformanceMonitor.update();
-            robot.dashboard.displayPrintf(1, "Period: %.3f/%.3f/%3f, Frequency: %.2f/%.2f/%.2f",
-                loopPerformanceMonitor.getMinPeriod(), loopPerformanceMonitor.getAveragePeriod(),
-                loopPerformanceMonitor.getMaxPeriod(), loopPerformanceMonitor.getMinFrequency(),
-                loopPerformanceMonitor.getAverageFrequency(), loopPerformanceMonitor.getMaxFrequency());
+            elapsedTimer.recordPeriodTime();
+            robot.dashboard.displayPrintf(15, "Period: %.3f(%.3f/%.3f)", elapsedTimer.getAverageElapsedTime(),
+                elapsedTimer.getMinElapsedTime(), elapsedTimer.getMaxElapsedTime());
         }
     } // runContinuous
 
     //
-    // Implements TrcJoystick.ButtonHandler.
+    // Implements FrcButtonHandler.
     //
-
-    public void leftDriveStickButtonEvent(int button, boolean pressed)
-    {
-        boolean isAutoActive = robot.isAutoActive();
-        robot.dashboard.displayPrintf(8, " LeftDriveStick: button=0x%04x %s, auto=%b",
-            button, pressed ? "pressed" : "released", isAutoActive);
-
-        switch (button)
-        {
-            case FrcJoystick.LOGITECH_TRIGGER:
-                robot.driveInverted = pressed;
-                robot.setHalfBrakeModeEnabled(true);
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON2:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON3:
-                driveSpeed = pressed ? DriveSpeed.FAST : DriveSpeed.MEDIUM;
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON4:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON5:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON6:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON7:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON8:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON9:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON10:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON11:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON12:
-                break;
-        }
-    }   // leftDriveStickButtonEvent
 
     public void rightDriveStickButtonEvent(int button, boolean pressed)
     {
-        robot.dashboard.displayPrintf(8, "RightDriveStick: button=0x%04x %s, auto=%b",
-            button, pressed ? "pressed" : "released", robot.isAutoActive());
-
-            switch (button)
+        boolean isAutoActive = robot.isAutoActive();
+        robot.dashboard
+            .displayPrintf(8, " RightDriveStick: button=0x%04x %s, auto=%b", button, pressed ? "pressed" : "released",
+                isAutoActive);
+        switch (button)
         {
             case FrcJoystick.SIDEWINDER_TRIGGER:
-                driveSpeed = pressed ? DriveSpeed.SLOW : DriveSpeed.MEDIUM;
-                break;
-
-            case FrcJoystick.SIDEWINDER_BUTTON2:
-                robot.vision.setRingLightEnabled(!pressed);
-                break;
-
-            case FrcJoystick.SIDEWINDER_BUTTON3:
-                break;
-
-            case FrcJoystick.SIDEWINDER_BUTTON4:
-                break;
-
-            case FrcJoystick.SIDEWINDER_BUTTON5:
                 if (pressed)
                 {
-                    gyroAssist = !gyroAssist;
-                    if (gyroAssist)
+                    if (robot.getDriveOrientation() != Robot.DriveOrientation.FIELD)
                     {
-                        robot.driveBase.enableGyroAssist(
-                            RobotInfo.DRIVE_MAX_ROTATION_RATE, RobotInfo.DRIVE_GYRO_ASSIST_KP);
+                        robot.setDriveOrientation(Robot.DriveOrientation.FIELD);
                     }
                     else
                     {
-                        robot.driveBase.disableGyroAssist();
+                        robot.setDriveOrientation(Robot.DriveOrientation.ROBOT);
+                    }
+                }
+                break;
+        }
+    }
+
+    public void driverControllerButtonEvent(int button, boolean pressed)
+    {
+        boolean isAutoActive = robot.isAutoActive();
+        robot.dashboard
+            .displayPrintf(8, " DriverController: button=0x%04x %s, auto=%b", button, pressed ? "pressed" : "released",
+                isAutoActive);
+
+        switch (button)
+        {
+            case FrcXboxController.BUTTON_A:
+                break;
+
+            case FrcXboxController.BUTTON_B:
+                break;
+
+            case FrcXboxController.BUTTON_X:
+                robot.setAntiDefenseEnabled(pressed);
+                break;
+
+            case FrcXboxController.BUTTON_Y:
+                if (pressed)
+                {
+                    if (robot.getDriveOrientation() != Robot.DriveOrientation.FIELD)
+                    {
+                        robot.setDriveOrientation(Robot.DriveOrientation.FIELD);
+                    }
+                    else
+                    {
+                        robot.setDriveOrientation(Robot.DriveOrientation.ROBOT);
                     }
                 }
                 break;
 
-            case FrcJoystick.SIDEWINDER_BUTTON6:
+            case FrcXboxController.LEFT_BUMPER:
+                if (pressed)
+                {
+                    robot.setDriveOrientation(Robot.DriveOrientation.INVERTED);
+                }
+                else
+                {
+                    robot.setDriveOrientation(Robot.DriveOrientation.FIELD);
+                }
                 break;
 
-            case FrcJoystick.SIDEWINDER_BUTTON7:
+            case FrcXboxController.RIGHT_BUMPER:
+                if (pressed)
+                {
+                    robot.autoShooter.trackTarget(true);
+                }
                 break;
 
-            case FrcJoystick.SIDEWINDER_BUTTON8:
+            case FrcXboxController.BACK:
                 break;
 
-            case FrcJoystick.SIDEWINDER_BUTTON9:
+            case FrcXboxController.START:
+                break;
+
+            case FrcXboxController.LEFT_STICK_BUTTON:
+                break;
+
+            case FrcXboxController.RIGHT_STICK_BUTTON:
                 break;
         }
-    }   // rightDriveStickButtonEvent
+    }   // driverControllerButtonEvent
 
     public void operatorStickButtonEvent(int button, boolean pressed)
     {
@@ -341,30 +259,94 @@ public class FrcTeleOp implements TrcRobot.RobotMode
         switch (button)
         {
             case FrcJoystick.LOGITECH_TRIGGER:
+                if (pressed)
+                {
+                    robot.conveyor.shoot();
+                }
+                else
+                {
+                    robot.conveyor.stop();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON2:
+                if (pressed)
+                {
+                    robot.conveyor.setPower(0.5);
+                }
+                else
+                {
+                    robot.conveyor.stop();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON3:
+                if (pressed)
+                {
+                    robot.intake.intakeMultiple(false);
+                }
+                else
+                {
+                    robot.intake.stopIntake(false);
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON4:
+                if (pressed)
+                {
+                    robot.intake.extendIntake();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON5:
+                if (pressed)
+                {
+                    robot.intake.retractIntake();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON6:
+                if (pressed)
+                {
+                    robot.shooter.setPitch(RobotInfo.FLYWHEEL_HIGH_ANGLE);
+                    robot.shooter.setFlywheelVelocity(RobotInfo.FLYWHEEL_HIGH_SPEED);
+                }
+                else
+                {
+                    robot.shooter.stowShooter();
+                    robot.shooter.stopFlywheel();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON7:
+                if (pressed)
+                {
+                    robot.shooter.setPitch(RobotInfo.FLYWHEEL_LOW_ANGLE);
+                    robot.shooter.setFlywheelVelocity(RobotInfo.FLYWHEEL_LOW_SPEED);
+                }
+                else
+                {
+                    robot.shooter.stowShooter();
+                    robot.shooter.stopFlywheel();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON8:
+                if (pressed)
+                {
+                    robot.shooter.stowShooter();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON9:
+                if (pressed)
+                {
+                    robot.autoShooter.cancel();
+                    robot.shooter.stowShooter();
+                    robot.shooter.stopFlywheel();
+                    robot.conveyor.stop();
+                    robot.intake.stopIntake();
+                }
                 break;
 
             case FrcJoystick.LOGITECH_BUTTON10:
@@ -385,6 +367,10 @@ public class FrcTeleOp implements TrcRobot.RobotMode
         switch (button)
         {
             case FrcJoystick.PANEL_BUTTON_RED1:
+                if (robot.conveyor.isManualOverrideEnabled() && pressed)
+                {
+                    robot.conveyor.advance();
+                }
                 break;
 
             case FrcJoystick.PANEL_BUTTON_GREEN1:
@@ -394,9 +380,23 @@ public class FrcTeleOp implements TrcRobot.RobotMode
                 break;
 
             case FrcJoystick.PANEL_BUTTON_YELLOW1:
+                if (pressed)
+                {
+                    robot.conveyor.setPower(-0.5);
+                }
+                else
+                {
+                    robot.conveyor.stop();
+                }
                 break;
 
             case FrcJoystick.PANEL_BUTTON_WHITE1:
+                if (pressed)
+                {
+                    robot.autoShooter.cancel();
+                    robot.shooter.stowShooter();
+                    robot.shooter.stopFlywheel();
+                }
                 break;
 
             case FrcJoystick.PANEL_BUTTON_RED2:
@@ -441,12 +441,33 @@ public class FrcTeleOp implements TrcRobot.RobotMode
                 break;
 
             case FrcJoystick.PANEL_SWITCH_RED2:
+                // time remaining in mode, endgame is 15 seconds
+                double matchTime = DriverStation.getInstance().getMatchTime();
+                // in teleop mode
+                boolean operatorControl = DriverStation.getInstance().isOperatorControl();
+                DriverStation.MatchType matchType = DriverStation.getInstance().getMatchType();
+                robot.globalTracer.traceInfo("FrcTeleOp.switchPanelButtonEvent",
+                    "[%.3f] Climber switch event! time=%.3f, operator=%b, matchType=%s, pressed=%b",
+                    TrcUtil.getModeElapsedTime(), matchTime, operatorControl, matchType, pressed);
+                if (matchType == DriverStation.MatchType.None || matchTime <= 30 && operatorControl)
+                {
+                    if (pressed)
+                    {
+                        robot.climber.startClimber();
+                    }
+                    else
+                    {
+                        robot.climber.cancel();
+                    }
+                }
                 break;
 
             case FrcJoystick.PANEL_SWITCH_GREEN2:
+                robot.shooter.setManualOverrideEnabled(pressed);
                 break;
 
             case FrcJoystick.PANEL_SWITCH_BLUE2:
+                robot.conveyor.setManualOverrideEnabled(pressed);
                 break;
 
             case FrcJoystick.PANEL_SWITCH_YELLOW2:

@@ -22,6 +22,7 @@
 
 package trclib;
 
+import org.apache.commons.math3.linear.ArrayRealVector;
 import org.apache.commons.math3.linear.MatrixUtils;
 import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.linear.RealVector;
@@ -37,6 +38,7 @@ import java.util.Locale;
  */
 public class TrcUtil
 {
+    public static final double METERS_PER_INCH = 0.0254;
     public static final double INCHES_PER_CM = 0.393701;
     public static final double MM_PER_INCH = 25.4;
     public static final double EARTH_GRAVITATIONAL_CONSTANT = 9.807;    //in m/s2
@@ -78,13 +80,13 @@ public class TrcUtil
     }   //getModeElapsedTime
 
     /**
-     * This method returns the current time in seconds with nano-second precision.
+     * This method returns the current time in seconds with millisecond precision.
      *
      * @return current time in seconds.
      */
     public static double getCurrentTime()
     {
-        return System.nanoTime() / 1000000000.0;
+        return getCurrentTimeMillis() / 1000.0;
     }   //getCurrentTime
 
     /**
@@ -387,12 +389,24 @@ public class TrcUtil
     /**
      * This method rounds a double to the nearest integer.
      *
-     * @param num Number to round.
-     * @return Rounded to the nearest integer.
+     * @param num specifies the number to round.
+     * @return number rounded to the nearest integer.
      */
     public static int round(double num)
     {
         return (int) Math.floor(num + 0.5);
+    }   //round
+
+    /**
+     * This method rounds a double to the specified precision.
+     *
+     * @param num specifies the number to round.
+     * @param precision specifies the precision to round to.
+     * @return number rounded to the specified precision.
+     */
+    public static double round(double num, double precision)
+    {
+        return Math.round(num / precision) * precision;
     }   //round
 
     /**
@@ -594,7 +608,7 @@ public class TrcUtil
     /**
      * Convert a point from a polar coordinate system to a cartesian coordinate system.
      *
-     * @param r Magnitude of vector
+     * @param r     Magnitude of vector
      * @param theta Direction of vector, in degrees clockwise from 0 (+y)
      * @return Vector in a cartesian coordinate system representing the same point.
      */
@@ -603,6 +617,17 @@ public class TrcUtil
         double thetaRad = Math.toRadians(theta);
         return MatrixUtils.createRealVector(new double[] { r * Math.sin(thetaRad), r * Math.cos(thetaRad) });
     }   //polarToCartesian
+
+    /**
+     * Create an {@link ArrayRealVector} with the supplied numbers. This is just quality of life to reduce typing.
+     *
+     * @param vector The data to put in the vector.
+     * @return A new vector instance with the data.
+     */
+    public static RealVector createVector(double... vector)
+    {
+        return new ArrayRealVector(vector);
+    } //createVector
 
     /**
      * Rotate a point counter-clockwise about the origin.

@@ -95,8 +95,8 @@ public class TrcWaypoint
      */
     public TrcWaypoint(TrcPose2D position, TrcPose2D velocity)
     {
-        this(0, position.x, position.y, 0,
-             velocity != null? TrcUtil.magnitude(velocity.x, velocity.y): 0.0, 0, 0, position.angle);
+        this(0, position.x, position.y, 0, velocity != null ? TrcUtil.magnitude(velocity.x, velocity.y) : 0.0, 0, 0,
+            position.angle);
     }   //TrcWaypoint
 
     /**
@@ -165,6 +165,11 @@ public class TrcWaypoint
         return waypoints;
     }   //loadPointsFromCsv
 
+    public TrcPose2D getPositionPose()
+    {
+        return new TrcPose2D(x, y, heading);
+    }
+
     /**
      * This method calculates the distance between this waypoint and the other waypoint.
      *
@@ -176,4 +181,11 @@ public class TrcWaypoint
         return TrcUtil.magnitude(point.x - x, point.y - y);
     }   //distanceTo
 
+    @Override
+    public String toString()
+    {
+        return String
+            .format("TrcWaypoint(timestep=%.3f,x=%.2f,y=%.2f,heading=%.1f,vel=%.2f,encPos=%.1f,accel=%.2f,jerk=%.2f)",
+                timeStep, x, y, heading, velocity, encoderPosition, acceleration, jerk);
+    }
 }   //class TrcWaypoint

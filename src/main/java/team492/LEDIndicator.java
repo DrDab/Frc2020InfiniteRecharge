@@ -22,62 +22,69 @@
 
 package team492;
 
-import frclib.FrcRevBlinkin;
-import trclib.TrcRevBlinkin.LEDPattern;
+import frclib.FrcAddressableLED;
+import frclib.FrcColor;
+import trclib.TrcAddressableLED;
 
 public class LEDIndicator
 {
-    private final LEDPattern normalPattern = LEDPattern.FixedBreathRed;
-    private final LEDPattern visionCenteredPattern = LEDPattern.SolidGreen;
-    private final LEDPattern visionLeftPattern = LEDPattern.SolidHotPink;
-    private final LEDPattern visionRightPattern = LEDPattern.SolidBlue;
-    private final LEDPattern[] normalPriorities = new LEDPattern[]
-        { normalPattern, visionLeftPattern, visionRightPattern, visionCenteredPattern };
+    private static final TrcAddressableLED.Pattern nominalPattern = new TrcAddressableLED.Pattern(FrcColor.FULL_GREEN,
+        RobotInfo.NUM_LEDS);
+    private static final TrcAddressableLED.Pattern fieldOrientedPattern = new TrcAddressableLED.Pattern(
+        FrcColor.FULL_WHITE, RobotInfo.NUM_LEDS);
+    private static final TrcAddressableLED.Pattern robotOrientedPattern = new TrcAddressableLED.Pattern(
+        FrcColor.FULL_BLUE, RobotInfo.NUM_LEDS);
+    private static final TrcAddressableLED.Pattern inverseOrientedPattern = new TrcAddressableLED.Pattern(
+        FrcColor.FULL_RED, RobotInfo.NUM_LEDS);
+    private static final TrcAddressableLED.Pattern conveyorPattern = new TrcAddressableLED.Pattern(FrcColor.FULL_YELLOW,
+        RobotInfo.NUM_LEDS);
 
-    private FrcRevBlinkin blinkin;
+    private static final TrcAddressableLED.Pattern[] priorities = new TrcAddressableLED.Pattern[] { nominalPattern,
+        robotOrientedPattern, inverseOrientedPattern, fieldOrientedPattern, conveyorPattern };
 
-    public LEDIndicator(Robot robot)
+    private FrcAddressableLED led;
+
+    public LEDIndicator()
     {
-        blinkin = new FrcRevBlinkin("LEDIndicator", RobotInfo.PWM_REV_BLINKIN);
-        blinkin.setPatternPriorities(normalPriorities);
-        blinkin.setPatternState(normalPattern, true);
-        robot.pdp.registerEnergyUsed(RobotInfo.PDP_CHANNEL_BLINKIN, "Blinkin");
-    }
-
-    public void enableNormalPriorities()
-    {
-        blinkin.setPatternPriorities(normalPriorities);
+        led = new FrcAddressableLED("LED", RobotInfo.NUM_LEDS, RobotInfo.PWM_CHANNEL_LED);
+        reset();
     }
 
     public void reset()
     {
-        blinkin.resetAllPatternStates();
-        blinkin.setPatternPriorities(normalPriorities);
-        blinkin.setPatternState(normalPattern, true);
+        led.setEnabled(true);
+        led.setPatternPriorities(priorities);
+        led.reset();
+        led.resetAllPatternStates();
+        led.setPatternState(nominalPattern, true);
     }
 
-    public void signalNoVisionDetected()
+    public void setConveyorIndicator(boolean enabled)
     {
-        blinkin.setPatternState(visionLeftPattern, false);
-        blinkin.setPatternState(visionRightPattern, false);
-        blinkin.setPatternState(visionCenteredPattern, false);
+        led.setPatternState(conveyorPattern, enabled);
     }
 
-    public void signalVisionLeft()
+    public void setDriveOrientation(Robot.DriveOrientation orientation)
     {
-        signalNoVisionDetected();
-        blinkin.setPatternState(visionLeftPattern, true);
-    }
+        switch (orientation)
+        {
+            case INVERTED:
+                led.setPatternState(robotOrientedPattern, false);
+                led.setPatternState(fieldOrientedPattern, false);
+                led.setPatternState(inverseOrientedPattern, true);
+                break;
 
-    public void signalVisionRight()
-    {
-        signalNoVisionDetected();
-        blinkin.setPatternState(visionRightPattern, true);
-    }
+            case FIELD:
+                led.setPatternState(inverseOrientedPattern, false);
+                led.setPatternState(robotOrientedPattern, false);
+                led.setPatternState(fieldOrientedPattern, true);
+                break;
 
-    public void signalVisionCentered()
-    {
-        signalNoVisionDetected();
-        blinkin.setPatternState(visionCenteredPattern, true);
+            case ROBOT:
+                led.setPatternState(inverseOrientedPattern, false);
+                led.setPatternState(fieldOrientedPattern, false);
+                led.setPatternState(robotOrientedPattern, true);
+                break;
+        }
     }
 }

@@ -27,7 +27,8 @@ import common.CmdTimedDrive;
 import edu.wpi.first.wpilibj.livewindow.LiveWindow;
 import frclib.FrcChoiceMenu;
 import frclib.FrcJoystick;
-import frclib.FrcRemoteVisionProcessor;
+import frclib.FrcXboxController;
+import hallib.HalDashboard;
 import trclib.TrcEvent;
 import trclib.TrcRobot.RunMode;
 import trclib.TrcStateMachine;
@@ -36,27 +37,24 @@ import trclib.TrcTimer;
 public class FrcTest extends FrcTeleOp
 {
     private static final String moduleName = "FrcTest";
+    public static final String RUN_FLYWHEEL_KEY = "Test/RunFlywheel";
+    public static final String FLYWHEEL_TARGET_KEY = "Test/FlywheelTarget";
+    public static final String SWERVE_ANGLES_KEYS = "Test/SwerveAngles";
+    public static final String ANGLE_TARGET_KEY = "Test/AngleTarget";
+    public static final String RUN_MOTORS_KEY = "Test/RunMotors";
+    public static final String SET_ANGLE_KEY = "Test/SetAngle";
+    public static final String SAVE_ANGLES_KEY = "Test/SaveAngles";
+    public static final String FLYWHEEL_VEL_KEY = "Test/FlywheelVel";
+    public static final String FLYWHEEL_POWER_KEY = "Test/FlywheelPower";
 
     public enum Test
     {
-        SENSORS_TEST,
-        SUBSYSTEMS_TEST,
-        DRIVE_MOTORS_TEST,
-        X_TIMED_DRIVE,
-        Y_TIMED_DRIVE,
-        X_DISTANCE_DRIVE,
-        Y_DISTANCE_DRIVE,
-        TURN_DEGREES,
-        TUNE_X_PID,
-        TUNE_Y_PID,
-        TUNE_TURN_PID,
-        LIVE_WINDOW
+        SENSORS_TEST, SUBSYSTEMS_TEST, SWERVE_CALIBRATION, DRIVE_MOTORS_TEST, X_TIMED_DRIVE, Y_TIMED_DRIVE, X_DISTANCE_DRIVE, Y_DISTANCE_DRIVE, TURN_DEGREES, TUNE_X_PID, TUNE_Y_PID, TUNE_TURN_PID, LIVE_WINDOW;
     }   // enum Test
 
     private enum State
     {
-        START,
-        DONE
+        START, DONE;
     }   // State
 
     private TrcEvent event;
@@ -72,6 +70,7 @@ public class FrcTest extends FrcTeleOp
     private CmdPidDrive pidDriveCommand = null;
 
     private int motorIndex = 0;
+    private boolean lastRunFlywheelState;
 
     public FrcTest(Robot robot)
     {
@@ -89,6 +88,7 @@ public class FrcTest extends FrcTeleOp
         testMenu = new FrcChoiceMenu<>("Test/Tests");
         testMenu.addChoice("Sensors Test", FrcTest.Test.SENSORS_TEST, true, false);
         testMenu.addChoice("Subsystems Test", FrcTest.Test.SUBSYSTEMS_TEST);
+        testMenu.addChoice("Swerve Calibration", Test.SWERVE_CALIBRATION);
         testMenu.addChoice("Drive Motors Test", FrcTest.Test.DRIVE_MOTORS_TEST);
         testMenu.addChoice("X Timed Drive", FrcTest.Test.X_TIMED_DRIVE);
         testMenu.addChoice("Y Timed Drive", FrcTest.Test.Y_TIMED_DRIVE);
@@ -99,6 +99,16 @@ public class FrcTest extends FrcTeleOp
         testMenu.addChoice("Tune Y PID", FrcTest.Test.TUNE_Y_PID);
         testMenu.addChoice("Tune Turn PID", FrcTest.Test.TUNE_TURN_PID);
         testMenu.addChoice("Live Window", FrcTest.Test.LIVE_WINDOW, false, true);
+
+        HalDashboard.refreshKey(FLYWHEEL_TARGET_KEY, 400);
+        HalDashboard.putBoolean(RUN_FLYWHEEL_KEY, false);
+        HalDashboard.refreshKey(ANGLE_TARGET_KEY, 0.0);
+        HalDashboard.putBoolean(RUN_MOTORS_KEY, false);
+        HalDashboard.putBoolean(SET_ANGLE_KEY, false);
+        HalDashboard.putBoolean(SAVE_ANGLES_KEY, false);
+        HalDashboard.putNumber(FLYWHEEL_POWER_KEY, 0);
+        HalDashboard.putNumber(FLYWHEEL_VEL_KEY, 0);
+        HalDashboard.putString(SWERVE_ANGLES_KEYS, "Not started");
     } // FrcTest
 
     //
@@ -112,6 +122,9 @@ public class FrcTest extends FrcTeleOp
         // Call TeleOp startMode.
         //
         super.startMode(prevMode, nextMode);
+
+        robot.ledIndicator.reset();
+
         //
         // Retrieve menu choice values.
         //
@@ -122,7 +135,6 @@ public class FrcTest extends FrcTeleOp
 
         if (test != Test.SUBSYSTEMS_TEST)
         {
-            robot.setHalfBrakeModeEnabled(false);
             robot.driveBase.resetOdometry(true, false);
         }
 
@@ -133,8 +145,15 @@ public class FrcTest extends FrcTeleOp
                 //
                 // Make sure no joystick controls on sensors test.
                 //
-                robot.leftDriveStick.setButtonHandler(null);
-                robot.rightDriveStick.setButtonHandler(null);
+                if (robot.preferences.useController)
+                {
+                    robot.driverController.setButtonHandler(null);
+                }
+                else
+                {
+                    robot.leftDriveStick.setButtonHandler(null);
+                    robot.rightDriveStick.setButtonHandler(null);
+                }
                 robot.operatorStick.setButtonHandler(null);
                 robot.buttonPanel.setButtonHandler(null);
                 robot.switchPanel.setButtonHandler(null);
@@ -144,6 +163,28 @@ public class FrcTest extends FrcTeleOp
                 // So let it flow to the next case.
                 //
             case SUBSYSTEMS_TEST:
+                break;
+
+            case SWERVE_CALIBRATION:
+                if (robot.preferences.useController)
+                {
+                    robot.driverController.setButtonHandler(null);
+                }
+                else
+                {
+                    robot.leftDriveStick.setButtonHandler(null);
+                    robot.rightDriveStick.setButtonHandler(null);
+                }
+                robot.operatorStick.setButtonHandler(null);
+                robot.buttonPanel.setButtonHandler(null);
+                robot.switchPanel.setButtonHandler(null);
+                robot.lfSteerMotor.set(0);
+                robot.rfSteerMotor.set(0);
+                robot.lrSteerMotor.set(0);
+                robot.rrSteerMotor.set(0);
+                HalDashboard.putBoolean(SET_ANGLE_KEY, false);
+                HalDashboard.putBoolean(RUN_MOTORS_KEY, false);
+                HalDashboard.putBoolean(SAVE_ANGLES_KEY, false);
                 break;
 
             case DRIVE_MOTORS_TEST:
@@ -159,33 +200,33 @@ public class FrcTest extends FrcTeleOp
                 break;
 
             case X_DISTANCE_DRIVE:
-                pidDriveCommand = new CmdPidDrive(
-                    robot, robot.pidDrive, 0.0, robot.driveDistance, 0.0, 0.0, robot.drivePowerLimit, false, false);
+                pidDriveCommand = new CmdPidDrive(robot, robot.pidDrive, 0.0, robot.driveDistance, 0.0, 0.0,
+                    robot.drivePowerLimit, false, false);
                 break;
 
             case Y_DISTANCE_DRIVE:
-                pidDriveCommand = new CmdPidDrive(
-                    robot, robot.pidDrive, 0.0, 0.0, robot.driveDistance, 0.0, robot.drivePowerLimit, false, false);
+                pidDriveCommand = new CmdPidDrive(robot, robot.pidDrive, 0.0, 0.0, robot.driveDistance, 0.0,
+                    robot.drivePowerLimit, false, false);
                 break;
 
             case TURN_DEGREES:
-                pidDriveCommand = new CmdPidDrive(
-                    robot, robot.pidDrive, 0.0, 0.0, 0.0, robot.turnDegrees, robot.drivePowerLimit, false, false);
+                pidDriveCommand = new CmdPidDrive(robot, robot.pidDrive, 0.0, 0.0, 0.0, robot.turnDegrees,
+                    robot.drivePowerLimit, false, false);
                 break;
 
             case TUNE_X_PID:
-                pidDriveCommand = new CmdPidDrive(
-                    robot, robot.pidDrive, 0.0, robot.driveDistance, 0.0, 0.0, robot.drivePowerLimit, false, true);
+                pidDriveCommand = new CmdPidDrive(robot, robot.pidDrive, 0.0, robot.driveDistance, 0.0, 0.0,
+                    robot.drivePowerLimit, false, true);
                 break;
 
             case TUNE_Y_PID:
-                pidDriveCommand = new CmdPidDrive(
-                    robot, robot.pidDrive, 0.0, 0.0, robot.driveDistance, 0.0, robot.drivePowerLimit, false, true);
+                pidDriveCommand = new CmdPidDrive(robot, robot.pidDrive, 0.0, 0.0, robot.driveDistance, 0.0,
+                    robot.drivePowerLimit, false, true);
                 break;
 
             case TUNE_TURN_PID:
-                pidDriveCommand = new CmdPidDrive(
-                    robot, robot.pidDrive, 0.0, 0.0, 0.0, robot.turnDegrees, robot.drivePowerLimit, false, true);
+                pidDriveCommand = new CmdPidDrive(robot, robot.pidDrive, 0.0, 0.0, 0.0, robot.turnDegrees,
+                    robot.drivePowerLimit, false, true);
                 break;
 
             case LIVE_WINDOW:
@@ -218,6 +259,44 @@ public class FrcTest extends FrcTeleOp
                 // test mode.
                 //
                 super.runPeriodic(elapsedTime);
+                boolean newState = HalDashboard.getBoolean(RUN_FLYWHEEL_KEY, false);
+                if (newState != lastRunFlywheelState)
+                {
+                    if (newState)
+                    {
+                        robot.shooter.setFlywheelVelocity(HalDashboard.getNumber(FLYWHEEL_TARGET_KEY, 0));
+                    }
+                    else
+                    {
+                        robot.shooter.stopFlywheel();
+                    }
+                }
+                lastRunFlywheelState = newState;
+                doSensorsTest();
+                break;
+
+            case SWERVE_CALIBRATION:
+                boolean newSetAngleButtonState = HalDashboard.getBoolean(SET_ANGLE_KEY, false);
+                if (newSetAngleButtonState)
+                {
+                    robot.driveBase.setSteerAngle(HalDashboard.getNumber(ANGLE_TARGET_KEY, 0), false);
+                    HalDashboard.putBoolean(SET_ANGLE_KEY, false);
+                }
+                boolean newSaveAngleButtonState = HalDashboard.getBoolean(SAVE_ANGLES_KEY, false);
+                if (newSaveAngleButtonState)
+                {
+                    HalDashboard.putBoolean(SAVE_ANGLES_KEY, false);
+                    robot.saveSteerZeroPositions();
+                }
+                double power = HalDashboard.getBoolean(RUN_MOTORS_KEY, false) ? 0.1 : 0.0;
+                robot.leftFrontWheel.set(power);
+                robot.rightFrontWheel.set(power);
+                robot.leftBackWheel.set(power);
+                robot.rightBackWheel.set(power);
+                HalDashboard.putString(SWERVE_ANGLES_KEYS, String
+                    .format("lf=%.2f,rf=%.2f,lr=%.2f,rr=%.2f", robot.leftFrontWheel.getSteerAngle(),
+                        robot.rightFrontWheel.getSteerAngle(), robot.leftBackWheel.getSteerAngle(),
+                        robot.rightBackWheel.getSteerAngle()));
                 doSensorsTest();
                 break;
 
@@ -243,13 +322,13 @@ public class FrcTest extends FrcTeleOp
             case Y_TIMED_DRIVE:
                 double lfEnc = robot.leftFrontWheel.getPosition();
                 double rfEnc = robot.rightFrontWheel.getPosition();
-                double lrEnc = robot.leftRearWheel.getPosition();
-                double rrEnc = robot.rightRearWheel.getPosition();
+                double lbEnc = robot.leftBackWheel.getPosition();
+                double rbEnc = robot.rightBackWheel.getPosition();
                 robot.dashboard.displayPrintf(2, "Enc:lf=%.0f,rf=%.0f", lfEnc, rfEnc);
-                robot.dashboard.displayPrintf(3, "Enc:lr=%.0f,rr=%.0f", lrEnc, rrEnc);
-                robot.dashboard.displayPrintf(4, "average=%f", (lfEnc + rfEnc + lrEnc + rrEnc) / 4.0);
-                robot.dashboard.displayPrintf(5, "xPos=%.1f,yPos=%.1f,heading=%.1f",
-                    robot.driveBase.getXPosition(), robot.driveBase.getYPosition(), robot.driveBase.getHeading());
+                robot.dashboard.displayPrintf(3, "Enc:lb=%.0f,rb=%.0f", lbEnc, rbEnc);
+                robot.dashboard.displayPrintf(4, "average=%f", (lfEnc + rfEnc + lbEnc + rbEnc) / 4.0);
+                robot.dashboard.displayPrintf(5, "xPos=%.1f,yPos=%.1f,heading=%.1f", robot.driveBase.getXPosition(),
+                    robot.driveBase.getYPosition(), robot.driveBase.getHeading());
                 timedDriveCommand.cmdPeriodic(elapsedTime);
                 break;
 
@@ -259,10 +338,10 @@ public class FrcTest extends FrcTeleOp
             case TUNE_X_PID:
             case TUNE_Y_PID:
             case TUNE_TURN_PID:
-                robot.dashboard.displayPrintf(2, "xPos=%.1f,yPos=%.1f,heading=%.1f, lf=%.2f,rf=%.2f,lr=%.2f,rr=%.2f",
+                robot.dashboard.displayPrintf(2, "xPos=%.1f,yPos=%.1f,heading=%.1f, lf=%.2f,rf=%.2f,lb=%.2f,rb=%.2f",
                     robot.driveBase.getXPosition(), robot.driveBase.getYPosition(), robot.driveBase.getHeading(),
                     robot.leftFrontWheel.getPosition(), robot.rightFrontWheel.getPosition(),
-                    robot.leftRearWheel.getPosition(), robot.rightRearWheel.getPosition());
+                    robot.leftBackWheel.getPosition(), robot.rightBackWheel.getPosition());
                 robot.encoderXPidCtrl.displayPidInfo(3);
                 robot.encoderYPidCtrl.displayPidInfo(5);
                 robot.gyroTurnPidCtrl.displayPidInfo(7);
@@ -282,55 +361,104 @@ public class FrcTest extends FrcTeleOp
     } // runContinuous
 
     @Override
-    public void leftDriveStickButtonEvent(int button, boolean pressed)
+    public void driverControllerButtonEvent(int button, boolean pressed)
     {
         boolean processedInput = false;
 
         switch (button)
         {
-            case FrcJoystick.LOGITECH_TRIGGER:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON2:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON3:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON4:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON5:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON6:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON7:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON8:
-                break;
-
-            case FrcJoystick.LOGITECH_BUTTON9:
-                robot.driveBase.clearReferenceOdometry();
-                robot.driveBase.resetOdometry(true, false);
+            case FrcXboxController.BUTTON_A:
                 processedInput = true;
+                if (pressed)
+                {
+                    robot.conveyor.shoot();
+                }
                 break;
 
-            case FrcJoystick.LOGITECH_BUTTON10:
+            case FrcXboxController.BUTTON_B:
+                processedInput = true;
+                if (pressed)
+                {
+                    robot.intake.intakeMultiple();
+                }
+                else
+                {
+                    robot.intake.stopIntake();
+                }
                 break;
 
-            case FrcJoystick.LOGITECH_BUTTON11:
+            case FrcXboxController.BUTTON_X:
                 break;
 
-            case FrcJoystick.LOGITECH_BUTTON12:
+            case FrcXboxController.BUTTON_Y:
+                break;
+
+            case FrcXboxController.LEFT_BUMPER:
+                break;
+
+            case FrcXboxController.RIGHT_BUMPER:
+                processedInput = true;
+                if (pressed)
+                {
+                    robot.autoShooter.shoot(null, 0, 0, TaskAutoShooter.Mode.ALIGN_ONLY, null, true);
+                }
+                else
+                {
+                    robot.autoShooter.cancel();
+                }
+                break;
+
+            case FrcXboxController.BACK:
+                processedInput = true;
+                if (pressed)
+                {
+                    robot.climber.setPower(-0.5);
+                }
+                else
+                {
+                    robot.climber.setPower(0);
+                }
+                break;
+
+            case FrcXboxController.START:
+                processedInput = true;
+                if (pressed)
+                {
+                    robot.climber.setPower(0.5);
+                }
+                else
+                {
+                    robot.climber.setPower(0);
+                }
+                break;
+
+            case FrcXboxController.LEFT_STICK_BUTTON:
+                processedInput = true;
+                if (pressed)
+                {
+                    robot.intake.extendIntake();
+                }
+                else
+                {
+                    robot.intake.retractIntake();
+                }
+                break;
+
+            case FrcXboxController.RIGHT_STICK_BUTTON:
+                processedInput = true;
+                if (pressed)
+                {
+                    robot.shooter.stowShooter();
+                    robot.conveyor.stop();
+                    robot.intake.stopIntake();
+                    robot.shooter.stopFlywheel();
+                }
                 break;
         }
 
         if (!processedInput)
         {
-            super.leftDriveStickButtonEvent(button, pressed);
+            super.driverControllerButtonEvent(button, pressed);
         }
     } // operatorStickButtonEvent
 
@@ -437,34 +565,55 @@ public class FrcTest extends FrcTeleOp
      */
     private void doSensorsTest()
     {
-        double lfPos = robot.leftFrontWheel.getPosition();
-        double rfPos = robot.rightFrontWheel.getPosition();
-        double lrPos = robot.leftRearWheel.getPosition();
-        double rrPos = robot.rightRearWheel.getPosition();
-        double driveBaseAverage = (lfPos + rfPos + lrPos + rrPos) / 4.0;
         robot.dashboard.displayPrintf(1, "Sensors Test (Batt=%.1f/%.1f):", robot.battery.getVoltage(),
             robot.battery.getLowestVoltage());
         robot.dashboard
-            .displayPrintf(2, "DriveBase: lf=%.3f,rf=%.3f,lr=%.3f,rr=%.3f,avg=%.3f", lfPos, rfPos, lrPos, rrPos,
-                driveBaseAverage);
-        robot.dashboard
-            .displayPrintf(3, "DriveBase: X=%.1f,Y=%.1f,Heading=%.1f,GyroRate=%.3f", robot.driveBase.getXPosition(),
-                robot.driveBase.getYPosition(), robot.driveBase.getHeading(), robot.gyro.getZRotationRate().value);
+            .displayPrintf(2, "DriveBase angles: lf=%.1f,rf=%.1f,lb=%.1f,rb=%.1f", robot.leftFrontWheel.getSteerAngle(),
+                robot.rightFrontWheel.getSteerAngle(), robot.leftBackWheel.getSteerAngle(),
+                robot.rightBackWheel.getSteerAngle());
+        robot.dashboard.displayPrintf(3, "DriveBase: X=%.1f,Y=%.1f,Heading=%.1f,xVel=%.2f,yVel=%.2f",
+            robot.driveBase.getXPosition(), robot.driveBase.getYPosition(), robot.driveBase.getHeading(),
+            robot.driveBase.getXVelocity(), robot.driveBase.getYVelocity());
         robot.dashboard.displayPrintf(4, "Sensors: pressure=%.1f", robot.getPressure());
 
-        if (robot.vision != null)
+        robot.dashboard.displayPrintf(5, "Alignment: left=%.2f,right=%.2f,angle=%.1f,shortestDist=%.2f",
+            robot.alignment.getLeftDistance(), robot.alignment.getRightDistance(), robot.alignment.getAngleToWall(),
+            robot.alignment.getShortestDistanceToWall());
+
+        robot.dashboard.displayPrintf(6, "Shooter: pitch=%.1f, flywheelVel=%.1f, %b/%b", robot.shooter.getPitch(),
+            robot.shooter.getFlywheelVelocity(), robot.shooter.pitchMotor.isLowerLimitSwitchActive(),
+            robot.shooter.pitchMotor.isUpperLimitSwitchActive());
+
+        robot.dashboard.displayPrintf(7, "Conveyor: target=%.1f, pos=%.1f, entrance=%b, exit=%b, ballCount=%d",
+            robot.conveyor.getTargetPosition(), robot.conveyor.getPosition(),
+            robot.conveyor.entranceProximitySensor.isActive(), robot.conveyor.exitProximitySensor.isActive(),
+            robot.getNumBalls());
+
+        if (robot.preferences.useVision)
         {
-            FrcRemoteVisionProcessor.RelativePose pose = robot.vision.getLastPose();
-            if (pose != null)
-            {
-                robot.dashboard
-                    .displayPrintf(13, "RaspiVision: x=%.1f,y=%.1f,objectYaw=%.1f", pose.x, pose.y, pose.objectYaw);
-            }
-            else
-            {
-                robot.dashboard.displayPrintf(13, "RaspiVision: No target found!");
-            }
+            robot.dashboard.displayPrintf(8, "Vision: RelPose=%s", robot.vision.getLastPose());
+            robot.dashboard.displayPrintf(9, "Target Depth: " + robot.vision.vision.getTargetDepth());
         }
+
+        robot.dashboard
+            .displayPrintf(10, "AutoShooter: active=%b, targetVel=%.1f, targetPitch=%.1f", robot.autoShooter.isActive(),
+                robot.autoShooter.getTargetVel(), robot.autoShooter.getTargetPitch());
+
+        if (robot.intake.getIntakeTaskState() != null)
+        {
+            robot.dashboard.displayPrintf(11, "Intake: currState=%s", robot.intake.getIntakeTaskState());
+        }
+
+        robot.dashboard
+            .displayPrintf(12, "Encoders - lf=%.1f,rf=%.1f,lr=%.1f,rr=%.1f", robot.lfDriveMotor.getPosition(),
+                robot.rfDriveMotor.getPosition(), robot.lrDriveMotor.getPosition(), robot.rrDriveMotor.getPosition());
+        robot.dashboard.displayPrintf(13, "Power - lf=%.2f,rf=%.2f,lr=%.2f,rr=%.2f", robot.lfDriveMotor.getPower(),
+            robot.rfDriveMotor.getPower(), robot.lrDriveMotor.getPower(), robot.rrDriveMotor.getPower());
+
+        robot.dashboard.displayPrintf(14, "Flashlight: %s", robot.shooter.flashlight.get().getPrettyValue());
+
+        HalDashboard.putNumber(FLYWHEEL_VEL_KEY, robot.shooter.getFlywheelVelocity());
+        HalDashboard.putNumber(FLYWHEEL_POWER_KEY, robot.shooter.flywheel.getPower());
     } // doSensorsTest
 
     /**
@@ -479,8 +628,8 @@ public class FrcTest extends FrcTeleOp
     private void doDriveMotorsTest()
     {
         robot.dashboard.displayPrintf(1, "Motors Test: index=%d", motorIndex);
-        robot.dashboard.displayPrintf(2, "Enc: lf=%.0f, rf=%.0f, lr=%.0f, rr=%.0f", robot.leftFrontWheel.getPosition(),
-            robot.rightFrontWheel.getPosition(), robot.leftRearWheel.getPosition(), robot.rightRearWheel.getPosition());
+        robot.dashboard.displayPrintf(2, "Enc: lf=%.0f, rf=%.0f, lb=%.0f, rb=%.0f", robot.leftFrontWheel.getPosition(),
+            robot.rightFrontWheel.getPosition(), robot.leftBackWheel.getPosition(), robot.rightBackWheel.getPosition());
 
         State state = sm.checkReadyAndGetState();
         if (state != null)
@@ -499,8 +648,8 @@ public class FrcTest extends FrcTeleOp
                             //
                             robot.leftFrontWheel.set(robot.drivePower);
                             robot.rightFrontWheel.set(0.0);
-                            robot.leftRearWheel.set(0.0);
-                            robot.rightRearWheel.set(0.0);
+                            robot.leftBackWheel.set(0.0);
+                            robot.rightBackWheel.set(0.0);
                             break;
 
                         case 1:
@@ -509,28 +658,28 @@ public class FrcTest extends FrcTeleOp
                             //
                             robot.leftFrontWheel.set(0.0);
                             robot.rightFrontWheel.set(robot.drivePower);
-                            robot.leftRearWheel.set(0.0);
-                            robot.rightRearWheel.set(0.0);
+                            robot.leftBackWheel.set(0.0);
+                            robot.rightBackWheel.set(0.0);
                             break;
 
                         case 2:
                             //
-                            // Run the left rear wheel.
+                            // Run the left back wheel.
                             //
                             robot.leftFrontWheel.set(0.0);
                             robot.rightFrontWheel.set(0.0);
-                            robot.leftRearWheel.set(robot.drivePower);
-                            robot.rightRearWheel.set(0.0);
+                            robot.leftBackWheel.set(robot.drivePower);
+                            robot.rightBackWheel.set(0.0);
                             break;
 
                         case 3:
                             //
-                            // Run the right rear wheel.
+                            // Run the right back wheel.
                             //
                             robot.leftFrontWheel.set(0.0);
                             robot.rightFrontWheel.set(0.0);
-                            robot.leftRearWheel.set(0.0);
-                            robot.rightRearWheel.set(robot.drivePower);
+                            robot.leftBackWheel.set(0.0);
+                            robot.rightBackWheel.set(robot.drivePower);
                             break;
                     }
                     motorIndex = motorIndex + 1;

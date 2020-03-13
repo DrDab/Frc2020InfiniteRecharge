@@ -23,20 +23,27 @@
 package team492;
 
 import frclib.FrcLimeLightVisionProcessor;
-import frclib.FrcRaspiVisionProcessor;
 import frclib.FrcRemoteVisionProcessor;
 
 public class VisionTargeting
 {
-    private FrcRemoteVisionProcessor vision;
+    private static final double CAMERA_HEIGHT = 15;
+    private static final double CAMERA_ANGLE = 30.6;
 
-    public VisionTargeting(Robot.Preferences preferences)
+    public final FrcLimeLightVisionProcessor vision;
+
+    public VisionTargeting()
     {
-        // This equation is the best fit line for a few data points to convert target height -> depth
         vision = new FrcLimeLightVisionProcessor("LimeLight");
-        ((FrcLimeLightVisionProcessor) vision).setDepthApproximator(height -> -0.341895 * height + 81.4745);
-        vision.setOffsets(RobotInfo.CAMERA_OFFSET, RobotInfo.CAMERA_DEPTH);
+        vision.setDepthApproximator("ty", y -> (RobotInfo.HIGH_VISION_TARGET_HEIGHT - CAMERA_HEIGHT) / Math.tan(Math.toRadians(y + CAMERA_ANGLE)));
+        vision.setOffsets(RobotInfo.CAMERA_X_OFFSET, RobotInfo.CAMERA_Y_OFFSET);
+//        vision.setOffsets(-2.5, 32);
         vision.setFreshnessTimeout(RobotInfo.CAMERA_DATA_TIMEOUT);
+    }
+
+    public double getTargetDepth()
+    {
+        return vision.getTargetDepth();
     }
 
     public FrcRemoteVisionProcessor.RelativePose getLastPose()
@@ -44,9 +51,9 @@ public class VisionTargeting
         return vision.getLastPose();
     }
 
-    public void setRingLightEnabled(boolean enabled)
+    public void setEnabled(boolean enabled)
     {
-        vision.setRingLightEnabled(enabled);
+        vision.setEnabled(enabled);
     }
 
     public FrcRemoteVisionProcessor.RelativePose getMedianPose(int numFrames, boolean requireAll)
